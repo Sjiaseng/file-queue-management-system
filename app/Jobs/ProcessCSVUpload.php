@@ -156,47 +156,44 @@ class ProcessCsvUpload implements ShouldQueue
 
     private function processBatch(array $batch): void
     {
-        $now = now();
-        foreach ($batch as &$item) {
-            $item['created_at'] = $now;
-            $item['updated_at'] = $now;
-        }
-
-        // Deduplicate by unique_key + size
-        $dedup = [];
         foreach ($batch as $item) {
-            $key = $item['unique_key'] . '|' . $item['size'];
-            $dedup[$key] = $item;
-        }
+            // Skip invalid rows
+            if (empty($item['unique_key']) || empty($item['size'])) {
+                continue;
+            }
 
-        $batch = array_values($dedup);
+            // Check if product with same unique_key and size exists
+            $existing = Product::where('unique_key', $item['unique_key'])
+                ->where('size', $item['size'])
+                ->first();
 
-        Log::debug('Processing batch', [
-            'count' => count($batch),
-            'first_item' => $batch[0] ?? null
-        ]);
-
-        try {
-            Product::upsert(
-                $batch,
-                ['unique_key', 'size'],
-                [
-                    'product_title',
-                    'product_description',
-                    'style',
-                    'sanmar_mainframe_color',
-                    'color_name',
-                    'piece_price',
-                    'updated_at',
-                ]
-            );
-        } catch (\Exception $e) {
-            Log::error('Upsert failed', [
-                'error' => $e->getMessage(),
-                'batch_count' => count($batch),
-                'first_item' => $batch[0] ?? null,
-            ]);
-            throw $e;
+            if ($existing) {
+                // Update existing
+                $existing->update([
+                    'product_title' => $item['product_title'],
+                    'product_description' => $item['product_description'],
+                    'style' => $item['style'],
+                    'sanmar_mainframe_color' => $item['sanmar_mainframe_color'],
+                    'color_name' => $item['color_name'],
+                    'piece_price' => $item['piece_price'],
+                    'updated_at' => now(),
+                ]);
+            } else {
+                // Insert new
+                Product::create([
+                    'unique_key' => $item['unique_key'],
+                    'product_title' => $item['product_title'],
+                    'product_description' => $item['product_description'],
+                    'style' => $item['style'],
+                    'sanmar_mainframe_color' => $item['sanmar_mainframe_color'],
+                    'size' => $item['size'],
+                    'color_name' => $item['color_name'],
+                    'piece_price' => $item['piece_price'],
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
         }
     }
+
 }
